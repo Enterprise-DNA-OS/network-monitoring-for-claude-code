@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'network-monitor-test-'));
+process.env.DATABASE_URL=process.env.MONITOR_TEST_POSTGRES_URL||'';
+process.env.DATA_DIR=path.join(tmp,'db');process.env.OUTPUT_DIR=path.join(tmp,'out');
+const {getDb}=await import('./lib/db.mjs');
+const {migrate}=await import('./migrate.mjs');
+const {seed}=await import('./seed.mjs');
+const {run,READS,output}=await import('./monitor.mjs');
+const {parseCsv}=await import('./lib/csv.mjs');
+const {probe,validateTarget}=await import('./lib/probe.mjs');
+const {page,table}=await import('./lib/render.mjs');
+let db=await getDb(),checks=0;const covered=new Set();
+const ok=(a,b)=>{checks++;assert.deepEqual(a,b);};
+const has=(a,b)=>{checks++;assert.match(a,b);};
+const call=async(...a)=>{covered.add(a[0]);return run(db,a);};
+const reject=async(fn,match)=>{checks++;await assert.rejects(fn,match);};
+const write=(name,content)=>{const p=path.join(tmp,name);fs.writeFileSync(p,typeof content==='string'?content:JSON.stringify(content));return p;};
+const actor='--actor=Test operator';
+let server;
+try{
+ if(process.env.MONITOR_TEST_POSTGRES_URL){const [r]=await db.query("select count(*)::int as n from information_schema.tables where table_schema='public'");assert.equal(r.n,0,'Use an empty disposable PostgreSQL database');}
+ await migrate(db);ok((await migrate(db)).ran.length,0);await seed(db);await seed(db);
+ ok((await call('monitors')).length,6);ok((await call('attention')).length,3);
+ for(const c of Object.keys(READS)){const r=await call(c);ok(Array.isArray(r),true);}
+ ok((await call('stale')).length,2);ok((await call('failures')).length,2);
+ const week=await call('weekly-samples');ok(week.find(r=>r.name==='Order portal').observed_success_pct,'50.00');ok(week.find(r=>r.name==='Branch DNS').observed_success_pct,null);
+ has(JSON.stringify(await call('compliance')),/access-review/);has(JSON.stringify(await call('compliance')),/retention-age/);
+ has(output(await call('attention')),/Warehouse link/);has(output(await call('attention'),true),/"state"/);
+ ok((await call('monitor','ORDER PORTAL'))[0].state,'up');ok((await call('history','Order portal')).length,2);
+ await reject(()=>call('monitor','Warehouse'),/Ambiguous/);await reject(()=>call('monitor','missing'),/No match/);
+ await reject(()=>call('assign','Order portal','--owner=Test'),/actor/);await reject(()=>call('monitors','--typo'),/Unknown/);
+ const exportFile=path.join(tmp,'export.json');ok((await call('export',`--file=${exportFile}`))[0].collections,6);ok((await call('export')).readings.length,6);await reject(()=>call('export',`--file=${exportFile}`),/EEXIST/);
+ const fixture=path.join(root,'tests/fixtures/prtg-sensors.csv');
+ ok((await call('import','prtg',`--file=${fixture}`,'--source=office',actor,'--dry-run'))[0].added,2);ok((await call('monitors')).length,6);
+ ok((await call('import','prtg',`--file=${fixture}`,'--source=office',actor))[0].added,2);
+ ok((await call('import','prtg',`--file=${fixture}`,'--source=office',actor))[0].unchanged,2);
+ ok((await call('monitor','Packing uplink'))[0].state,'disabled');ok((await call('monitor','Packing uplink'))[0].last_outcome,null);
+ const bad=write('bad.csv','objid,sensor\n800,Valid\nBAD,Invalid\n');await reject(()=>call('import','prtg',`--file=${bad}`,'--source=office',actor),/numeric/);ok((await call('monitors')).length,8);
+ const duplicate=write('duplicate.csv','objid,sensor\n801,Duplicate\n801,Duplicate\n');await reject(()=>call('import','prtg',`--file=${duplicate}`,'--source=office',actor),/Duplicate/);
+ const conflict=write('conflict.csv',fs.readFileSync(fixture,'utf8').replace('Packing uplink','Different'));await reject(()=>call('import','prtg',`--file=${conflict}`,'--source=office',actor),/Changed source/);
+ ok(parseCsv('\ufeffid,name\r\n1,"A, B"\r\n')[0].name,'A, B');ok(parseCsv('a,b\n1,"two\nlines"')[0].b,'two\nlines');
+ for(const s of ['a,a\n1,2','a,b\n1','a,b\n1,"bad']){checks++;assert.throws(()=>parseCsv(s));}
+ await reject(()=>call('enable','Packing uplink',actor),/owner/);await call('assign','Packing uplink','--owner=Moana',actor);await call('enable','Packing uplink',actor);ok((await call('monitor','Packing uplink'))[0].state,'unknown');
+ const observed=new Date().toISOString();const readings=[{monitor:'Packing uplink',source_key:'feed-1',observed_at:observed,outcome:'up',value:10,latency_ms:15,detail:'Verified sample'}];const rf=write('readings.json',readings);
+ ok((await call('ingest',`--file=${rf}`,actor,'--dry-run'))[0].added,1);ok((await call('monitor','Packing uplink'))[0].state,'unknown');
+ ok((await call('ingest',`--file=${rf}`,actor))[0].added,1);ok((await call('ingest',`--file=${rf}`,actor))[0].unchanged,1);
+ await reject(()=>call('ingest',`--file=${write('different.json',[{...readings[0],outcome:'down'}])}`,actor),/Conflicting/);
+ const before=(await call('export')).readings.length;await reject(()=>call('ingest',`--file=${write('mixed.json',[{...readings[0],source_key:'new-good'},{...readings[0],source_key:'new-bad',outcome:'maybe'}])}`,actor),/outcome/);ok((await call('export')).readings.length,before);
+ await reject(()=>call('ingest',`--file=${write('future.json',[{...readings[0],source_key:'future',observed_at:'2099-01-01T00:00:00Z'}])}`,actor),/Future/);
+ await reject(()=>call('ingest',`--file=${write('date.json',[{...readings[0],source_key:'date',observed_at:'2026-02-30T00:00:00Z'}])}`,actor),/calendar/);
+ await call('configure','Packing uplink','--upper-limit=80','--unit=percent',actor);ok((await call('monitor','Packing uplink'))[0].state,'disabled');await call('enable','Packing uplink',actor);ok((await call('monitor','Packing uplink'))[0].state,'unknown');
+ await call('ingest',`--file=${write('limit.json',[{...readings[0],source_key:'limit',observed_at:new Date().toISOString(),value:90}])}`,actor);ok((await call('monitor','Packing uplink'))[0].state,'down');
+ await reject(()=>call('ingest',`--file=${write('missing-value.json',[{...readings[0],source_key:'no-value',value:null}])}`,actor),/numeric value/);
+ await call('disable','Packing uplink',actor);ok((await call('monitor','Packing uplink'))[0].enabled,false);
+ const now=Date.now();await call('plan-maintenance','Order portal',`--start=${new Date(now-1000).toISOString()}`,`--end=${new Date(now+3600000).toISOString()}`,'--reason=Approved exercise',actor);
+ await reject(()=>call('plan-maintenance','Order portal','--start=2020-01-01T00:00:00Z','--end=2020-01-02T00:00:00Z','--reason=Retroactive',actor),/planned/);
+ const [followup]=await call('log','Order portal','--owner=Moana','--note=Check recovery','--due=2020-01-01T00:00:00Z',actor);
+ await reject(()=>call('close',followup.id,'--evidence=Verified',actor),/maintenance/);
+ await call('assign','Warehouse spare','--owner=Noah',actor);
+ const [task]=await call('log','Warehouse spare','--owner=Noah','--note=Test & <script>bad</script>','--due=2020-01-01T00:00:00Z',actor);
+ await reject(()=>call('close',task.id,'--evidence=Verified',actor),/fresh/);
+ await call('ingest',`--file=${write('recovered.json',[{monitor:'Warehouse spare',source_key:'recovery',observed_at:new Date().toISOString(),outcome:'up'}])}`,actor);
+ await call('close',task.id,'--evidence=Physical link restored and checked',actor);await reject(()=>call('close',task.id,'--evidence=Again',actor),/already/);
+ await call('review-policy','--purpose=Monitoring evidence','--access-due=2099-01-01','--retention-days=120','--retention-due=2099-01-01',actor);ok((await call('compliance')).some(r=>r.rule==='access-review'),false);ok((await call('retention')).length,0);
+ for(const t of ['readings','audit','maintenance'])await reject(()=>db.exec(`delete from ${t}`),/append-only/);
+ await reject(()=>call('configure','Order portal','--interval=0',actor),/interval/);
+ for(const [kind,target] of [['http','file:///tmp/x'],['http','https://user:password@example.test/'],['http','https://example.test/?token=x'],['tcp','tcp://localhost'],['dns','dns://localhost/path']]){checks++;assert.throws(()=>validateTarget(kind,target));}
+ server=http.createServer((req,res)=>{if(req.url==='/slow'){setTimeout(()=>res.end('slow'),300);return;}if(req.url==='/redirect'){res.writeHead(302,{Location:'/'});res.end();return;}res.writeHead(req.url==='/fail'?503:200);res.end('hello');});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;
+ const [native]=await call('add','--name=Test web','--owner=Tester','--kind=http',`--target=http://127.0.0.1:${port}/`,actor);await call('enable',native.id,actor);
+ await reject(()=>call('collect',native.id,actor),/allow-network/);ok((await call('collect',native.id,actor,'--allow-network'))[0].outcome,'up');
+ await call('configure',native.id,`--target=http://127.0.0.1:${port}/fail`,actor);await call('enable',native.id,actor);ok((await call('collect',native.id,actor,'--allow-network'))[0].outcome,'down');
+ await call('configure',native.id,`--target=http://127.0.0.1:${port}/slow`,'--timeout=100',actor);await call('enable',native.id,actor);ok((await call('collect',native.id,actor,'--allow-network'))[0].detail,'Timeout');
+ await call('configure',native.id,`--target=http://127.0.0.1:${port}/redirect`,actor);await call('enable',native.id,actor);ok((await call('collect',native.id,actor,'--allow-network'))[0].outcome,'down');
+ const [tcp]=await call('add','--name=Test tcp','--owner=Tester','--kind=tcp',`--target=tcp://127.0.0.1:${port}`,actor);await call('enable',tcp.id,actor);ok((await call('collect',tcp.id,actor,'--allow-network'))[0].outcome,'up');
+ const [dns]=await call('add','--name=Test dns','--owner=Tester','--kind=dns','--target=dns://localhost',actor);await call('enable',dns.id,actor);ok((await call('collect-due',actor,'--allow-network')).some(r=>r.name==='Test dns'&&r.outcome==='up'),true);
+ await reject(()=>call('collect-due',actor),/allow-network/);
+ const draft=await call('draft-monitor-brief','Warehouse spare');has(fs.readFileSync(draft[0].file,'utf8'),/&lt;script&gt;/);ok(fs.readFileSync(draft[0].file,'utf8').includes('<script>bad'),false);
+ ok(fs.existsSync((await call('weekly-review'))[0].file),true);has(page({title:'<script>',sections:[{title:'Test',html:table([{name:'<img src=x>'}])}]}),/&lt;img/);
+ await call('help');await reject(()=>call('nonsense'),/Unknown command/);
+ // Renderers and actual CLI run after closing the embedded connection.
+ await db.close();db=null;
+ for(const script of ['view.mjs','docs.mjs']){const res=spawnSync(process.execPath,[path.join(root,'scripts',script)],{cwd:root,env:process.env,encoding:'utf8'});ok(res.status,0);}
+ const cli=spawnSync(process.execPath,[path.join(root,'scripts/monitor.mjs'),'monitor','Warehouse'],{cwd:root,env:process.env,encoding:'utf8'});ok(cli.status,1);has(cli.stderr,/Ambiguous/);
+ const machine=spawnSync(process.execPath,[path.join(root,'scripts/monitor.mjs'),'monitors','--json'],{cwd:root,env:process.env,encoding:'utf8'});ok(machine.status,0);ok(Array.isArray(JSON.parse(machine.stdout)),true);
+ console.log(`PASS: ${checks} assertions; ${covered.size} CLI commands exercised; ${process.env.MONITOR_TEST_POSTGRES_URL?'PostgreSQL':'PGlite'}; real loopback HTTP/TCP and localhost DNS probes.`);
+}finally{server?.closeAllConnections();if(server)await new Promise(r=>server.close(r));await db?.close();fs.rmSync(tmp,{recursive:true,force:true});}

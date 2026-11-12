@@ -1,11 +1,40 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
+    "name": "monitor-brief",
+    "title": "Monitor investigation brief",
+    "for_each": "select id,name from monitors order by name",
     "file": "name",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Current evidence",
+        "sql": "select name,device,site,owner,state,in_maintenance,observed_at from monitor_state where id=$1",
+        "layout": "record"
+      },
+      {
+        "title": "Recent checks",
+        "sql": "select observed_at,outcome,value,latency_ms,detail,maintenance from readings where monitor_id=$1 order by observed_at desc limit 25"
+      },
+      {
+        "title": "Follow-up commitments",
+        "sql": "select owner,note,due_at,closed_at,evidence from followups where monitor_id=$1 order by due_at"
+      }
+    ]
+  },
+  {
+    "name": "maintenance-brief",
+    "title": "Maintenance window record",
+    "for_each": "select w.id,m.name from maintenance w join monitors m on m.id=w.monitor_id",
+    "file": "name",
+    "sections": [
+      {
+        "title": "Approved window",
+        "sql": "select starts_at,ends_at,reason,actor from maintenance where id=$1",
+        "layout": "record"
+      },
+      {
+        "title": "Checks during the window",
+        "sql": "select r.observed_at,r.outcome,r.detail from readings r join maintenance w on w.monitor_id=r.monitor_id where w.id=$1 and r.observed_at>=w.starts_at and r.observed_at<w.ends_at order by r.observed_at"
+      }
     ]
   }
 ]

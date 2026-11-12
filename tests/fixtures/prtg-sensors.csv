@@ -1,0 +1,3 @@
+"objid","probe","group","device","sensor","type","status"
+"701","Local Probe","Warehouse","switch-01","Packing uplink","snmptraffic","Up"
+"702","Remote Probe","Branch","branch-01","Branch website","http","Down"

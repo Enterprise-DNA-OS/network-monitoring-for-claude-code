@@ -1,115 +1,88 @@
-<h1 align="center">Network Monitoring for Claude Code</h1>
+# Network Monitoring for Claude Code
 
-<p align="center">
-  <strong>The open-source network monitoring desk that is just a database and Claude Code.</strong>
-</p>
+Own the record of what failed, what stopped reporting and who is fixing it. HTTP, TCP and DNS checks, external metric readings, maintenance and recovery follow-up in one database. A scoped alternative for teams reviewing a PRTG bill.
 
-<p align="center">
-  Created by <a href="https://www.enterprisedna.co"><strong>Enterprise DNA</strong></a>. Free and open source. Works with Claude Code, Codex, OpenCode or Cursor.
-</p>
+## Three ways to own it
 
-<!-- three-doors -->
-<table align="center">
-  <tr>
-    <td align="center"><strong>Do it yourself</strong><br/>Clone it, run it, own it. Free, MIT.<br/><a href="#quick-start">Quick start</a></td>
-    <td align="center"><strong>We customise it</strong><br/>Your fields, your rules, your PRTG data brought across.<br/><a href="https://enterprisedna.co/omni/book/?utm_source=github&utm_medium=readme&utm_campaign=prtg">Book a call</a></td>
-    <td align="center"><strong>We run it for you</strong><br/>Installed, connected and operated inside Omni. Setup fee, then a retainer.<br/><a href="https://enterprisedna.co/omni/instead-of/prtg?utm_source=github&utm_medium=readme&utm_campaign=prtg">How it works</a></td>
-  </tr>
-</table>
+| Path | What happens |
+|---|---|
+| Do it yourself | Free MIT source. Install, run the demo, import your PRTG sensor inventory and configure the checks you need. |
+| We customise it | Enterprise DNA maps the inventory, builds your required collectors and rules, and adds a screen or a different stack when the job needs one. One setup fee, then a retainer for ongoing work. |
+| We run it for you | Installed, scheduled, connected and maintained through Omni by Enterprise DNA. One setup fee, then a retainer. |
 
-<p align="center">
-  <a href="#what-is-this">What is this</a> &bull;
-  <a href="#why-no-front-end">Why no front end</a> &bull;
-  <a href="#quick-start">Quick start</a> &bull;
-  <a href="#the-commands">Commands</a> &bull;
-  <a href="#instead-of-prtg">Instead of PRTG</a> &bull;
-  <a href="#want-it-installed-and-run-for-you">Installed for you</a> &bull;
-  <a href="#license">License</a>
-</p>
+[Get your version built](https://enterprisedna.co/omni/book/?offer=replace-software&utm_source=github&utm_campaign=prtg). The software is free. Hosting, agents, custom integrations and operations have their own costs.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Node-20+-339933?style=flat-square" alt="Node 20+" />
-  <img src="https://img.shields.io/badge/PostgreSQL-any-336791?style=flat-square" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/PGlite-embedded-3ecf8e?style=flat-square" alt="PGlite" />
-  <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT License" />
-</p>
+## Start with the demo
 
----
+Node 22.15 or later. Works through Claude Code, Codex, OpenCode or Cursor. Both CLAUDE.md and AGENTS.md ship with the same workflow instructions.
 
-## What is this
-
-Network Monitoring for Claude Code does the job you pay PRTG for, as a Postgres database and a set of agent commands. There is no web front end. You open the folder in [Claude Code](https://claude.com/claude-code) (or Codex, OpenCode, Cursor: see `AGENTS.md`) and ask for what you want in plain language. It runs the right query, and it can answer questions the PRTG dashboard cannot.
-
-<!-- TODO(author): the annual bill. One sentence: what a 10 to 50 person business typically pays PRTG per year, all in, with a source. -->
-
-Want the same thing with a web front end, or built on a different stack? That is a customisation, and it is exactly what Enterprise DNA does: [book a call](https://enterprisedna.co/omni/book/?utm_source=github&utm_medium=readme&utm_campaign=prtg).
-
-<!-- TODO(author): two or three sentences on what this specific product covers and who it is for. -->
-
-## Why no front end
-
-- The front end was only ever there because the database was hard to talk to. That is no longer true.
-- Your data sits in plain Postgres tables you own. Any tool can read them. No export, no lock-in.
-- No seats, no tiers, no add-ons. Read [docs/why-no-front-end.md](docs/why-no-front-end.md) for the honest trade-offs too.
-
-## Quick start
-
-Sixty seconds, no database install (an embedded Postgres runs inside Node):
-
-```bash
-git clone https://github.com/Enterprise-DNA-OS/network-monitoring-for-claude-code.git
-cd network-monitoring-for-claude-code
+```sh
 npm install
 npm run demo
+npm run monitor -- attention
+npm run monitor -- weekly-samples
+npm run monitor -- compliance
+npm run view
+npm run docs
+npm test
 ```
 
-Then open the folder in Claude Code and type a slash command. <!-- TODO(author): name the first command to try. -->
+With no DATABASE_URL, PGlite stores the local database under .data/db. Set DATABASE_URL for PostgreSQL. DATA_DIR selects a different embedded location. Use a fresh database and only npm run migrate for real data. Never load demo rows into production. The sample company, names and observations are invented demonstration data.
 
-### Use it with your own Postgres or Supabase
+Open views/week.html for the read-only weekly report. docs-out contains monitor investigation papers and maintenance records. Set brand.json once for the business name, logo and colours. Agent recipes live in .claude/commands. Use /weekly-review for the combined paper, /customise to add a field or rule and /new-view for a new read-only report.
 
-Copy `.env.example` to `.env`, set `DATABASE_URL`, then `npm run migrate`. Same commands, shared data, no per-seat fee.
+## The operating week
 
-## The commands
+1. Morning: /attention and /stale find failed services and missing collection.
+2. Ownership: /unowned and /log record a person and recovery commitment.
+3. Planned work: /plan-maintenance records the approved window before work begins.
+4. Recovery: /history provides the evidence, then /close requires a fresh successful result and a written check.
+5. Monday: /weekly-review prepares the failed samples, coverage gaps, overdue actions and policy review.
 
-<!-- TODO(author): a table of the slash commands in .claude/commands and what each one does. -->
+The collector sends an HTTP request, opens a TCP connection or resolves a hostname only after you explicitly authorise the configured target with --allow-network. The recurring collect-due command is ready for a scheduler you control. Imported monitors cannot issue network requests until separately configured and enabled. No notification or device-configuration sends are included.
 
-| Command | What it does |
-|---|---|
-| `/...` | ... |
+## Ten questions answered from your record
 
-## Instead of PRTG
+These combine collection, ownership and follow-up rather than relying on a fixed dashboard. This is not a claim that PRTG cannot be extended to answer them.
 
-<!-- TODO(author): how to bring data across from PRTG; link docs/replace-prtg.md -->
+1. Which enabled monitors have stopped reporting, even if their last reading was good? `stale`
+2. Which unplanned failures have no named owner? `attention`
+3. Which branch has the most missing evidence? `site-review`
+4. Which recovery promises are overdue? `overdue`
+5. Which failures happened inside approved maintenance? `failures`
+6. Which monitors supplied failed samples this week? `noisy-monitors`
+7. Which imported sensors still need a working collector? `migration-gaps`
+8. Which readings have passed our retention period? `retention`
+9. Who owns the largest queue of failed or stale monitors? `owner-review`
+10. What proportion of captured samples succeeded, and how many were actually captured? `weekly-samples`
 
-## Architecture
+## Your first hour: ten things to ask for
 
-```
-network-monitoring-for-claude-code/
-  CLAUDE.md                 how the operator wants this run (routing table + house rules)
-  AGENTS.md                 the same, for Codex / OpenCode / Cursor / Gemini CLI
-  .claude/commands/         the slash commands
-  scripts/                  the CLI the commands drive
-  scripts/lib/db.mjs        one adapter: DATABASE_URL (pg) or embedded PGlite
-  supabase/migrations/      plain SQL schema
-  supabase/seed.sql         demo data
-  docs/                     the thesis and the migration guide
-```
+1. Show the failed checks that need a person today.
+2. Find monitors whose collector has gone quiet.
+3. Bring in my PRTG sensor export without enabling checks.
+4. Assign a responsible operator to this branch.
+5. Configure an approved website check.
+6. Add our planned maintenance window.
+7. Record a recovery promise and its due time.
+8. Prepare an investigation brief in our brand.
+9. Add our escalation contact as a new field.
+10. Give us a read-only report for each site.
 
-## Built for coding agents
+## Switch with evidence
 
-The database, CLI and command recipes work with Claude Code, Codex, OpenCode or Cursor. Ask your coding agent for a new command and have it implement and test the change against the same records.
+[Export and import guide](docs/replace-prtg.md). One command imports the saved PRTG sensor inventory with its source IDs, device labels, probe/group, type and status text. Dry runs, atomic imports and repeat-import checks are included. Native collection settings, historical channel samples, notifications and credentials are separate migration work. Keep PRTG until every required check and alert route has been verified.
 
-## Contributing
+## Scope and controls
 
-Issues and pull requests are welcome. Keep the shape: plain SQL, a small CLI, a slash command per recurring job, no front end.
+The base performs HTTP status, TCP connection and DNS resolution checks, plus receives external numeric or status readings. It does not implement all PRTG sensors, discovery, SNMP, WMI, packet analysis or distributed probes. [Why no front end](docs/why-no-front-end.md) explains where custom collectors and screens fit.
 
-## Want it installed and run for you?
+A successful sample is not proof of continuous uptime. The weekly ratio is the success rate of captured samples outside maintenance, with its denominator shown. Collection gaps remain visible. Configuration changes invalidate old evidence for current-state purposes. There is no guaranteed notification service or installed scheduler.
 
-Enterprise DNA installs Network Monitoring for Claude Code for your business, migrates your PRTG data, connects it to the rest of your tools, and runs it for you as part of **Omni**, our managed Command Center. One setup fee, then a monthly retainer.
+[Record checks](docs/compliance.md) cite NZ privacy principles and label local policy choices. A passing check is not legal certification. Tables use row security and revoke public access, but operational roles, authentication, backups, notification delivery and capacity testing are deployment work. Audit actor names are annotations. Administrators can change append-only controls. Export is an inspection archive, not automatic restore.
 
-- Book a call: [enterprisedna.co/omni/book](https://enterprisedna.co/omni/book/?offer=replace-software&utm_source=github&utm_medium=readme&utm_campaign=prtg)
-- Read more: [enterprisedna.co/omni/instead-of/prtg](https://enterprisedna.co/omni/instead-of/prtg?utm_source=github&utm_medium=readme&utm_campaign=prtg)
+## Validation
 
-## License
+npm test creates an isolated database, exercises every CLI command, probes local HTTP/TCP services and resolves localhost. It tests failure, timeout, redirects, stale evidence, maintenance, import rollback, repeated and conflicting IDs, thresholds, recovery gates, immutable evidence, HTML escaping and generated documents. CI runs Node 22 and 24 on Linux and Windows, plus PostgreSQL 16. MONITOR_TEST_POSTGRES_URL must point only at an empty disposable database.
 
-MIT. Copyright (c) 2026 Enterprise DNA.
+[Full CLI syntax](docs/cli.md). Independent software, not affiliated with Paessler or PRTG. MIT. Copyright 2026 Enterprise DNA.

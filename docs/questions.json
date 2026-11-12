@@ -1,0 +1,42 @@
+[
+  {
+    "question": "Which enabled monitors have stopped reporting, even if their last reading was good?",
+    "command": "stale"
+  },
+  {
+    "question": "Which unplanned failures have no named owner?",
+    "command": "attention"
+  },
+  {
+    "question": "Which branch has the most missing evidence?",
+    "command": "site-review"
+  },
+  {
+    "question": "Which recovery promises are overdue?",
+    "command": "overdue"
+  },
+  {
+    "question": "Which failures happened inside approved maintenance?",
+    "command": "failures"
+  },
+  {
+    "question": "Which monitors supplied failed samples this week?",
+    "command": "noisy-monitors"
+  },
+  {
+    "question": "Which imported sensors still need a working collector?",
+    "command": "migration-gaps"
+  },
+  {
+    "question": "Which readings have passed our retention period?",
+    "command": "retention"
+  },
+  {
+    "question": "Who owns the largest queue of failed or stale monitors?",
+    "command": "owner-review"
+  },
+  {
+    "question": "What proportion of captured samples succeeded, and how many were actually captured?",
+    "command": "weekly-samples"
+  }
+]

@@ -1,13 +1,24 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "Network Monitoring for Claude Code: what needs attention, rendered by npm run view",
+    "title": "Network monitoring review",
+    "subtitle": "Observed samples are not time-based uptime. Missing evidence stays visible.",
     "sections": [
       {
         "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "sql": "select name,site,owner,state,in_maintenance from attention order by name"
+      },
+      {
+        "title": "Follow-ups overdue",
+        "sql": "select name,owner,note,due_at,state from overdue_followups order by due_at"
+      },
+      {
+        "title": "Weekly samples",
+        "sql": "select name,samples,failed_samples,maintenance_samples,observed_success_pct from sampling_week order by name"
+      },
+      {
+        "title": "Record checks",
+        "sql": "select * from compliance_findings order by rule"
       }
     ]
   }
